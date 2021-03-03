@@ -2,10 +2,17 @@
 
 
 ```go
+package main
+
+import (
+	"log"
+	"github.com/hyahm/hugoPartUpload"
+)
+
 func main() {
 	pc := PartClient{
 		Filename:    "C:\\Users\\Admin\\Desktop\\a.mp4",
-		Token:       "xxxxxxxxxxxx",
+		Token:       "xxxxxxxxxxxxxx",
 		Identifier:  "aaaa",
 		User:        "test",
 		Title:       "test",
