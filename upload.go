@@ -18,12 +18,14 @@ type PartClient struct {
 	Identifier  string // 必填
 	User        string // 必填
 	Title       string
+	Audio       string
 	Rule        string   // 必填
 	Cat         string   // 必填
 	Subcat      []string // 必填
 	Actor       string
 	Domain      string
 	Filename    string // 必填
+	Cover       string // 封面图
 	UploadId    int
 	NewFilename string
 }
@@ -79,6 +81,14 @@ func (pc *PartClient) PartUpload() error {
 		return err
 	}
 	return pc.dataForm()
+}
+
+func (pc *PartClient) Upload() error {
+	err := pc.checkFiled()
+	if err != nil {
+		return err
+	}
+	return pc.upload()
 }
 
 type Data struct {
@@ -155,6 +165,7 @@ func (pc *PartClient) dataForm() error {
 		if err != nil {
 			return err
 		}
+
 		if int64(i+1)*PARTSIZE > int64(l) {
 			_, err = io.Copy(part, bytes.NewReader(b[int64(i)*PARTSIZE:]))
 		} else {
@@ -188,6 +199,16 @@ func (pc *PartClient) complate() error {
 	cli := http.Client{}
 	buf := new(bytes.Buffer)
 	w := multipart.NewWriter(buf)
+	imageb, err := ioutil.ReadFile(pc.Cover)
+	if err != nil {
+		return err
+	}
+	image, err := w.CreateFormFile("image", fmt.Sprintf("%s.jpg", pc.Identifier))
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(image, bytes.NewReader(imageb))
 	w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
 	w.WriteField("user", pc.User)
 	w.WriteField("identifier", pc.Identifier)
@@ -198,6 +219,65 @@ func (pc *PartClient) complate() error {
 	w.WriteField("actor", pc.Actor)
 
 	req, err := http.NewRequest("POST", pc.Domain+"/audio.php/VideoUpload/completeMultipartUpload", buf)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.Header.Set("Token", pc.Token)
+	resp, err := cli.Do(req)
+	if err != nil {
+		return err
+
+	}
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+
+	}
+	fmt.Println(string(b))
+	return nil
+}
+
+func (pc *PartClient) upload() error {
+	if pc.Audio == "" {
+		return errors.New("Token not be empty")
+	}
+	cli := http.Client{}
+	buf := new(bytes.Buffer)
+	w := multipart.NewWriter(buf)
+
+	videob, err := ioutil.ReadFile(pc.Audio)
+	if err != nil {
+		return err
+	}
+	audio, err := w.CreateFormFile("audio", pc.Filename)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(audio, bytes.NewReader(videob))
+
+	imageb, err := ioutil.ReadFile(pc.Cover)
+	if err != nil {
+		return err
+	}
+	image, err := w.CreateFormFile("image", fmt.Sprintf("%s.jpg", pc.Identifier))
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(image, bytes.NewReader(imageb))
+	w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
+	w.WriteField("user", pc.User)
+	w.WriteField("identifier", pc.Identifier)
+	w.WriteField("title", pc.Title)
+	w.WriteField("rule", pc.Rule)
+	w.WriteField("cat", pc.Cat)
+	w.WriteField("subcat", strings.Join(pc.Subcat, ","))
+	w.WriteField("actor", pc.Actor)
+	w.WriteField("filename", pc.Filename)
+
+	req, err := http.NewRequest("POST", pc.Domain+"/audio.php/VideoUpload/index", buf)
 	if err != nil {
 		return err
 	}
