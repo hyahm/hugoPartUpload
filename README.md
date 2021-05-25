@@ -1,5 +1,9 @@
 # hugo 分片上传包
 
+```
+go get github.com/hyahm/hugoPartUpload
+```
+
 
 ```go
 package main
@@ -10,7 +14,7 @@ import (
 )
 
 func main() {
-	pc := PartClient{
+	pc := hugoPartUpload.PartClient{
 		Filename:    "C:\\Users\\Admin\\Desktop\\a.mp4",
 		Token:       "xxxxxxxxxxxxxx",
 		Identifier:  "aaaa",
