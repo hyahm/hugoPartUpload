@@ -9,14 +9,15 @@ func main() {
 	defer golog.Sync()
 	pc := hugoPartUpload.PartClient{
 		Filename:    "C:\\Users\\Admin\\Desktop\\dongman\\1.mp4",
-		Token:       "xxxxxxxx",
-		Identifier:  "aaaa",
+		Token:       "xxxxxx",
+		Identifier:  "aaaa7",
 		User:        "ceshi2",
 		Title:       "test",
 		Rule:        "test",
-		Cat:         "mm_手机下载",
-		Subcat:      []string{"动漫"},
+		Cat:         "mm_在线电影",
+		Subcat:      []string{"222"},
 		Actor:       "test",
+		Domain:      "",
 		NewFilename: "bbb.mp4",
 	}
 	err := pc.PartUpload()

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/hyahm/golog"
 )
@@ -164,7 +165,7 @@ func (pc *PartClient) dataForm() error {
 	}
 	var i int64 = 0
 	// l := len(b)
-
+	wg := &sync.WaitGroup{}
 	for {
 
 		buf := new(bytes.Buffer)
@@ -213,21 +214,29 @@ func (pc *PartClient) dataForm() error {
 		}
 		req.Header.Set("Content-Type", w.FormDataContentType())
 		req.Header.Set("Token", pc.Token)
-		cli := http.Client{}
-		resp, err := cli.Do(req)
-		if err != nil {
-			return err
-
-		}
-		rb, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return err
-		}
-		golog.Info(string(rb))
+		wg.Add(1)
+		go cut(req, wg)
 		i++
 		// return
 	}
+	wg.Wait()
 	return pc.complate()
+}
+
+func cut(r *http.Request, wg *sync.WaitGroup) {
+	defer wg.Done()
+	cli := http.Client{}
+	resp, err := cli.Do(r)
+	if err != nil {
+		golog.Error(err)
+		return
+	}
+	rb, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		golog.Error(err)
+		return
+	}
+	golog.Info(string(rb))
 }
 
 func (pc *PartClient) complate() error {
