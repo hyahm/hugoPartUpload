@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+
+	"github.com/hyahm/golog"
 )
 
 type PartClient struct {
@@ -32,22 +34,22 @@ type PartClient struct {
 
 func (pc *PartClient) checkFiled() error {
 	if pc.Domain == "" {
-		pc.Domain = "http://admin.hugocut.com/"
+		pc.Domain = "http://admin.hugocut.com"
 	}
 
 	if pc.Filename == "" {
-		return errors.New("Filename not be empty")
+		return errors.New("filename not be empty")
 	}
 	if pc.User == "" {
-		return errors.New("User not be empty")
+		return errors.New("user not be empty")
 	}
 
 	if pc.Identifier == "" {
-		return errors.New("Identifier not be empty")
+		return errors.New("identifier not be empty")
 	}
 
 	if pc.Token == "" {
-		return errors.New("Token not be empty")
+		return errors.New("token not be empty")
 	}
 
 	if pc.Title == "" {
@@ -55,11 +57,11 @@ func (pc *PartClient) checkFiled() error {
 	}
 
 	if pc.Rule == "" {
-		return errors.New("Rule not be empty")
+		return errors.New("rule not be empty")
 	}
 
 	if pc.Cat == "" {
-		return errors.New("Cat not be empty")
+		return errors.New("cat not be empty")
 	}
 	if pc.Domain[len(pc.Domain)-1:] == "/" {
 		pc.Domain = pc.Domain[:len(pc.Domain)-1]
@@ -101,7 +103,7 @@ type InitData struct {
 	Message string `json:"message"`
 }
 
-var PARTSIZE int64 = 1024 * 1024 * 10
+var PARTSIZE int64 = 1024 * 1024 * 10 // 10M
 
 func (pc *PartClient) initfunc() error {
 
@@ -115,6 +117,7 @@ func (pc *PartClient) initfunc() error {
 	`
 	f, err := os.Open(pc.Filename)
 	if err != nil {
+		golog.Error(err)
 		return err
 	}
 	fi, err := f.Stat()
@@ -129,6 +132,9 @@ func (pc *PartClient) initfunc() error {
 	cli := &http.Client{}
 
 	r, err := http.NewRequest("POST", pc.Domain+"/audio.php/VideoUpload/initiateMultipartUpload", strings.NewReader(x))
+	if err != nil {
+		return err
+	}
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Token", pc.Token)
 	resp, err := cli.Do(r)
@@ -137,26 +143,30 @@ func (pc *PartClient) initfunc() error {
 	}
 	defer resp.Body.Close()
 	init := &InitData{}
-
-	err = json.NewDecoder(resp.Body).Decode(init)
+	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%#v\n", *init)
+	golog.Info(string(b))
+	err = json.Unmarshal(b, init)
+	if err != nil {
+		return err
+	}
 	pc.UploadId = init.Data.UploadId
 	return nil
 }
 
 func (pc *PartClient) dataForm() error {
-	b, err := ioutil.ReadFile(pc.Filename)
+	f, err := os.Open(pc.Filename)
+	// b, err := ioutil.ReadFile(pc.Filename)
 	if err != nil {
 		return err
 	}
+	var i int64 = 0
+	// l := len(b)
 
-	i := 0
-	l := len(b)
-	cli := http.Client{}
-	for int64(i)*PARTSIZE < int64(l) {
+	for {
+
 		buf := new(bytes.Buffer)
 		w := multipart.NewWriter(buf)
 		w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
@@ -165,12 +175,37 @@ func (pc *PartClient) dataForm() error {
 		if err != nil {
 			return err
 		}
-
-		if int64(i+1)*PARTSIZE > int64(l) {
-			_, err = io.Copy(part, bytes.NewReader(b[int64(i)*PARTSIZE:]))
-		} else {
-			_, err = io.Copy(part, bytes.NewReader(b[int64(i)*PARTSIZE:(int64(i)+1)*PARTSIZE]))
+		_, err = f.Seek(i*PARTSIZE, 0)
+		if err != nil {
+			return err
 		}
+		b := make([]byte, PARTSIZE)
+		n, err := f.Read(b)
+		if err != nil {
+			if err == io.EOF {
+				break
+			} else {
+				return err
+			}
+		}
+		golog.Info(n)
+		_, err = io.Copy(part, bytes.NewReader(b[:n]))
+		if err != nil {
+			golog.Info(err)
+			return err
+		}
+		// if int64(i+1)*PARTSIZE > int64(l) {
+		// 	_, err = io.Copy(part, bytes.NewReader(b[int64(i)*PARTSIZE:]))
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// } else {
+		// 	_, err = io.Copy(part, bytes.NewReader(b[int64(i)*PARTSIZE:(int64(i)+1)*PARTSIZE]))
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// }
+
 		w.WriteField("partNumber", fmt.Sprintf("%d", i+1))
 		req, err := http.NewRequest("POST", pc.Domain+"/audio.php/VideoUpload/uploadPart", buf)
 		if err != nil {
@@ -178,17 +213,17 @@ func (pc *PartClient) dataForm() error {
 		}
 		req.Header.Set("Content-Type", w.FormDataContentType())
 		req.Header.Set("Token", pc.Token)
+		cli := http.Client{}
 		resp, err := cli.Do(req)
 		if err != nil {
 			return err
 
 		}
-		b, err := ioutil.ReadAll(resp.Body)
+		rb, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return err
-
 		}
-		fmt.Println(string(b))
+		golog.Info(string(rb))
 		i++
 		// return
 	}
@@ -199,16 +234,23 @@ func (pc *PartClient) complate() error {
 	cli := http.Client{}
 	buf := new(bytes.Buffer)
 	w := multipart.NewWriter(buf)
-	imageb, err := ioutil.ReadFile(pc.Cover)
-	if err != nil {
-		return err
-	}
-	image, err := w.CreateFormFile("image", fmt.Sprintf("%s.jpg", pc.Identifier))
-	if err != nil {
-		return err
+	if pc.Cover != "" {
+		imageb, err := ioutil.ReadFile(pc.Cover)
+		if err != nil {
+			golog.Error(err)
+			return err
+		}
+		image, err := w.CreateFormFile("image", fmt.Sprintf("%s.jpg", pc.Identifier))
+		if err != nil {
+			golog.Error(err)
+			return err
+		}
+		_, err = io.Copy(image, bytes.NewReader(imageb))
+		if err != nil {
+			return err
+		}
 	}
 
-	_, err = io.Copy(image, bytes.NewReader(imageb))
 	w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
 	w.WriteField("user", pc.User)
 	w.WriteField("identifier", pc.Identifier)
@@ -234,13 +276,16 @@ func (pc *PartClient) complate() error {
 		return err
 
 	}
-	fmt.Println(string(b))
+	golog.Info(string(b))
 	return nil
 }
 
 func (pc *PartClient) upload() error {
+	if pc.Token == "" {
+		return errors.New("token not be empty")
+	}
 	if pc.Audio == "" {
-		return errors.New("Token not be empty")
+		return errors.New("audio not be empty")
 	}
 	cli := http.Client{}
 	buf := new(bytes.Buffer)
@@ -256,7 +301,9 @@ func (pc *PartClient) upload() error {
 	}
 
 	_, err = io.Copy(audio, bytes.NewReader(videob))
-
+	if err != nil {
+		return err
+	}
 	imageb, err := ioutil.ReadFile(pc.Cover)
 	if err != nil {
 		return err
@@ -267,6 +314,9 @@ func (pc *PartClient) upload() error {
 	}
 
 	_, err = io.Copy(image, bytes.NewReader(imageb))
+	if err != nil {
+		return err
+	}
 	w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
 	w.WriteField("user", pc.User)
 	w.WriteField("identifier", pc.Identifier)

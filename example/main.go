@@ -1,27 +1,26 @@
 package main
 
 import (
-	"log"
-
+	"github.com/hyahm/golog"
 	"github.com/hyahm/hugoPartUpload"
 )
 
 func main() {
+	defer golog.Sync()
 	pc := hugoPartUpload.PartClient{
-		Filename:    "C:\\Users\\Admin\\Desktop\\a.mp4",
-		Token:       "d26fcd4a11538c54071ad0c803034f0dea737a82",
+		Filename:    "C:\\Users\\Admin\\Desktop\\dongman\\1.mp4",
+		Token:       "xxxxxxxx",
 		Identifier:  "aaaa",
-		User:        "test",
+		User:        "ceshi2",
 		Title:       "test",
 		Rule:        "test",
 		Cat:         "mm_手机下载",
-		Subcat:      []string{"经典"},
+		Subcat:      []string{"动漫"},
 		Actor:       "test",
-		Domain:      "http://192.168.50.72",
 		NewFilename: "bbb.mp4",
 	}
 	err := pc.PartUpload()
 	if err != nil {
-		log.Fatal(err)
+		golog.Fatal(err)
 	}
 }
