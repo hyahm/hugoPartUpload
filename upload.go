@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -31,6 +32,9 @@ type PartClient struct {
 	Cover       string // 封面图
 	UploadId    int
 	NewFilename string
+	InitUrl     string
+	UploadUrl   string
+	CompleteUrl string
 }
 
 func (pc *PartClient) checkFiled() error {
@@ -38,6 +42,15 @@ func (pc *PartClient) checkFiled() error {
 		pc.Domain = "http://admin.hugocut.com"
 	}
 
+	if pc.InitUrl == "/audio.php/VideoUpload/initiateMultipartUpload" {
+		pc.InitUrl = ""
+	}
+	if pc.UploadUrl == "" {
+		pc.UploadUrl = "/audio.php/VideoUpload/uploadPart"
+	}
+	if pc.CompleteUrl == "" {
+		pc.CompleteUrl = "/audio.php/VideoUpload/completeMultipartUpload"
+	}
 	if pc.Filename == "" {
 		return errors.New("filename not be empty")
 	}
@@ -104,7 +117,7 @@ type InitData struct {
 	Message string `json:"message"`
 }
 
-var PARTSIZE int64 = 1024 * 1024 * 10 // 10M
+var PARTSIZE int64 = 10 << 20 // 10M
 
 func (pc *PartClient) initfunc() error {
 
@@ -121,6 +134,7 @@ func (pc *PartClient) initfunc() error {
 		golog.Error(err)
 		return err
 	}
+	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
 		return err
@@ -132,7 +146,7 @@ func (pc *PartClient) initfunc() error {
 	x = fmt.Sprintf(x, pc.NewFilename, tp, fi.Size(), pc.User)
 	cli := &http.Client{}
 
-	r, err := http.NewRequest("POST", pc.Domain+"/audio.php/VideoUpload/initiateMultipartUpload", strings.NewReader(x))
+	r, err := http.NewRequest("POST", pc.Domain+pc.InitUrl, strings.NewReader(x))
 	if err != nil {
 		return err
 	}
@@ -163,19 +177,18 @@ func (pc *PartClient) dataForm() error {
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	var i int64 = 0
-	// l := len(b)
 	wg := &sync.WaitGroup{}
 	for {
-
-		buf := new(bytes.Buffer)
+		buf := &bytes.Buffer{}
 		w := multipart.NewWriter(buf)
-		w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
-		w.WriteField("user", pc.User)
-		part, err := w.CreateFormFile("file", fmt.Sprintf("%d.mp4", i))
+
+		part, err := w.CreateFormFile("file", fmt.Sprintf("%d%s", i, filepath.Ext(pc.Filename)))
 		if err != nil {
 			return err
 		}
+
 		_, err = f.Seek(i*PARTSIZE, 0)
 		if err != nil {
 			return err
@@ -183,39 +196,23 @@ func (pc *PartClient) dataForm() error {
 		b := make([]byte, PARTSIZE)
 		n, err := f.Read(b)
 		if err != nil {
-			if err == io.EOF {
-				break
-			} else {
+			if err != io.EOF {
 				return err
+			} else {
+				break
 			}
 		}
-		golog.Info(n)
-		_, err = io.Copy(part, bytes.NewReader(b[:n]))
+		_, err = part.Write(b[:n])
 		if err != nil {
 			golog.Info(err)
 			return err
 		}
-		// if int64(i+1)*PARTSIZE > int64(l) {
-		// 	_, err = io.Copy(part, bytes.NewReader(b[int64(i)*PARTSIZE:]))
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// } else {
-		// 	_, err = io.Copy(part, bytes.NewReader(b[int64(i)*PARTSIZE:(int64(i)+1)*PARTSIZE]))
-		// 	if err != nil {
-		// 		return err
-		// 	}
-		// }
-
 		w.WriteField("partNumber", fmt.Sprintf("%d", i+1))
-		req, err := http.NewRequest("POST", pc.Domain+"/audio.php/VideoUpload/uploadPart", buf)
-		if err != nil {
-			return err
-		}
-		req.Header.Set("Content-Type", w.FormDataContentType())
-		req.Header.Set("Token", pc.Token)
+		w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
+		w.WriteField("user", pc.User)
+		w.Close()
 		wg.Add(1)
-		go cut(req, wg)
+		go pc.cut(w.FormDataContentType(), buf, wg)
 		i++
 		// return
 	}
@@ -223,10 +220,17 @@ func (pc *PartClient) dataForm() error {
 	return pc.complate()
 }
 
-func cut(r *http.Request, wg *sync.WaitGroup) {
+func (pc *PartClient) cut(typ string, buf *bytes.Buffer, wg *sync.WaitGroup) {
 	defer wg.Done()
+	req, err := http.NewRequest("POST", pc.Domain+pc.UploadUrl, buf)
+	if err != nil {
+		golog.Error(err)
+		return
+	}
+	req.Header.Set("Content-Type", typ)
+	req.Header.Set("Token", pc.Token)
 	cli := http.Client{}
-	resp, err := cli.Do(r)
+	resp, err := cli.Do(req)
 	if err != nil {
 		golog.Error(err)
 		return
@@ -269,7 +273,7 @@ func (pc *PartClient) complate() error {
 	w.WriteField("subcat", strings.Join(pc.Subcat, ","))
 	w.WriteField("actor", pc.Actor)
 
-	req, err := http.NewRequest("POST", pc.Domain+"/audio.php/VideoUpload/completeMultipartUpload", buf)
+	req, err := http.NewRequest("POST", pc.Domain+pc.CompleteUrl, buf)
 	if err != nil {
 		return err
 	}
