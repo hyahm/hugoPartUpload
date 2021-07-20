@@ -263,7 +263,7 @@ func (pc *PartClient) complate() error {
 			return err
 		}
 	}
-
+	golog.Info(pc.User)
 	w.WriteField("uploadId", fmt.Sprintf("%d", pc.UploadId))
 	w.WriteField("user", pc.User)
 	w.WriteField("identifier", pc.Identifier)
@@ -272,7 +272,7 @@ func (pc *PartClient) complate() error {
 	w.WriteField("cat", pc.Cat)
 	w.WriteField("subcat", strings.Join(pc.Subcat, ","))
 	w.WriteField("actor", pc.Actor)
-
+	w.Close()
 	req, err := http.NewRequest("POST", pc.Domain+pc.CompleteUrl, buf)
 	if err != nil {
 		return err
